@@ -12,7 +12,7 @@ int  asssubs_on(void);
 /* per frame while on: the subtitle time (seconds, the viewer's delay applied), whether it runs, the picture's rate and
    where it sits (layout units) with its own size; scale: the viewer's subtitle size (1 = 100 %) */
 void asssubs_tick(double t, int playing, double fps, float vx, float vy, float vw, float vh, int videoW, int videoH, float scale);
-void asssubs_draw(void);
+void asssubs_draw(float bright); /* bright: the viewer's subtitle brightness (1 = as the file has it) */
 int  asssubs_too_slow(void);                        /* 1 once: renders stayed above 40 ms: drawn plain from now on */
 double asssubs_render_ms(void); /* the styled renders' running average (0 before the first) */
 #endif

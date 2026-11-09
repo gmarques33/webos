@@ -242,10 +242,11 @@ void asssubs_tick(double t, int playing, double fps, float vx, float vy, float v
   shown.s = calloc(shown.n ? shown.n * 4 : 1, sizeof *shown.s); shown.ns = calloc(shown.n ? shown.n : 1, sizeof *shown.ns);
   for (int i = 0; i < shown.n; i++) upload(i);
 }
-void asssubs_draw(void) {
+void asssubs_draw(float bright) {
   if (!cur || !shown.n || shown.fw <= 0) return;
   float kx = 1920.0f / shown.fw, ky = 1080.0f / shown.fh;
   for (int i = 0; i < shown.n; i++) { Piece *p = &shown.p[i]; uint32_t c = ((uint32_t)(255 - (p->color & 0xff)) << 24) | (p->color >> 8); if (!(c >> 24)) continue;
+    if (bright < 1) c = (c & 0xff000000u) | (col_mix(0, c, bright) & 0x00ffffffu); /* the viewer's brightness: every colour toward black */
     int tx = (p->w + TILE - 1) / TILE; if (tx > 2) tx = 2;
     for (int k = 0; k < shown.ns[i]; k++) { AtlasSlot *s = &shown.s[i * 4 + k];
       if (!atlas_valid(s)) { for (int j = 0; j < shown.ns[i]; j++) atlas_release(&shown.s[i * 4 + j]); upload(i); s = &shown.s[i * 4 + k]; if (k >= shown.ns[i] || !atlas_valid(s)) break; } /* its page was reused: in again */

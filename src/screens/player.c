@@ -264,6 +264,9 @@ static const char *want_sub(void) { return store_get("subsLang", "eng"); }
 static int size_idx(void) { int i = atoi(store_get("subtitleSize", "2")); return i < 0 || i > 6 ? 2 : i; }
 static const int SUB_SIZES[] = { 72, 80, 100, 120, 140, 160, 180 };
 static const char *SUB_COLORS[] = { "#ffffff", "#ffe600", "#00e5ff" }, *SUB_BGS[] = { "0", "1", ".6" };
+static const char *SUB_BRIGHT[] = { "100", "90", "80", "70", "60", "50", "40", "30" }; /* the lines' brightness: white a little grey, softer on an OLED in the dark */
+static int bright_idx(void) { const char *v = store_get("subsBright", "100"); for (int i = 0; i < 8; i++) if (!strcmp(SUB_BRIGHT[i], v)) return i; return 0; }
+static uint32_t col_dim(uint32_t c, float k) { return k >= 1 ? c : (c & 0xff000000u) | (col_mix(0, c, k) & 0x00ffffffu); } /* toward black, its alpha kept */
 static int bg_idx(void) { const char *v = store_get("subsBgStyle", "0"); for (int i = 0; i < 3; i++) if (!strcmp(SUB_BGS[i], v)) return i; return 0; }
 static int color_idx(void) { const char *v = store_get("subsColor", "#ffffff"); for (int i = 0; i < 3; i++) if (!strcasecmp(SUB_COLORS[i], v)) return i; return -1; }
 static uint32_t hexcol(const char *h) { return 0xff000000u | (unsigned)strtoul(h + 1, NULL, 16); }
@@ -1013,17 +1016,17 @@ static const float C_GLIDE[4] = { .25f, 1, .5f, 1 }; /* GLIDE_EASE's curve, for 
 static struct {
   Mo tabX, tabW, tabF; int tabSeen; Mo swA; int swDir, swPend; Mo colBX, colBA; int colBSeen; int quiet;
   unsigned colSig[4], rowSig; Mo colA[4], rowA; int onIdx[4], rowOn; Mo chkA[4], rowChk; int vkC; char vkU[8]; Mo vkA;
-  Mo dot[4]; int dotSeen[4]; /* 0 the picture size, 1 subtitle size, 2 colour, 3 background */
+  Mo dot[5]; int dotSeen[5]; /* 0 the picture size, 1 subtitle size, 2 colour, 3 background, 4 brightness */
   Mo swK[2]; int swFrom[2], swCur[2], swSeen[2]; /* the colour and background swatches: the one before, the one now, how far it has come */
 } TM;
 static void tm_tick(float dt) {
-  Mo *m[] = { &TM.tabX, &TM.tabW, &TM.tabF, &TM.swA, &TM.colBX, &TM.colBA, &TM.rowA, &TM.rowChk, &TM.vkA, &TM.dot[0], &TM.dot[1], &TM.dot[2], &TM.dot[3], &TM.swK[0], &TM.swK[1] };
+  Mo *m[] = { &TM.tabX, &TM.tabW, &TM.tabF, &TM.swA, &TM.colBX, &TM.colBA, &TM.rowA, &TM.rowChk, &TM.vkA, &TM.dot[0], &TM.dot[1], &TM.dot[2], &TM.dot[3], &TM.dot[4], &TM.swK[0], &TM.swK[1] };
   for (size_t i = 0; i < sizeof m / sizeof *m; i++) mo_tick(m[i], dt); for (int i = 0; i < 4; i++) { mo_tick(&TM.colA[i], dt); mo_tick(&TM.chkA[i], dt); }
 }
 static void tm_reset(void) { /* a tray opening: everything where it is, nothing gliding in from an old place */
   TM.tabSeen = TM.colBSeen = TM.swPend = 0; mo_set(&TM.swA, 1); mo_set(&TM.colBA, 0); mo_set(&TM.tabF, 0); mo_set(&TM.vkA, 1); TM.vkU[0] = 0;
   for (int i = 0; i < 4; i++) { mo_set(&TM.colA[i], 1); mo_set(&TM.chkA[i], 1); TM.onIdx[i] = -2; TM.colSig[i] = 0; } mo_set(&TM.rowA, 1); mo_set(&TM.rowChk, 1); TM.rowOn = -2; TM.rowSig = 0;
-  for (int i = 1; i < 4; i++) TM.dotSeen[i] = 0; TM.swSeen[0] = TM.swSeen[1] = 0;
+  for (int i = 1; i < 5; i++) TM.dotSeen[i] = 0; TM.swSeen[0] = TM.swSeen[1] = 0;
 }
 static unsigned str_sig(unsigned h, const char *s) { while (*s) h = h * 31 + (unsigned char)*s++; return h * 31 + 7; }
 static int item_on(const TItem *it) { return strncmp(it->u, "lang:", 5) ? it->on && !it->tool : it->d > 0; }
@@ -1182,6 +1185,7 @@ static void tray_data(void) {
     int ci = color_idx(); x = col_add(c3, 4); x->tool = 1; snprintf(x->lb, 200, "%s", T("Size")); snprintf(x->vl, 48, "%d%%", SUB_SIZES[size_idx()]); snprintf(x->u, 1024, "size");
     x = col_add(c3, 4); x->tool = 1; snprintf(x->lb, 200, "%s", T("Colour")); snprintf(x->u, 1024, "color"); /* colour and background: shown by their swatch (drawn with the column) */
     x = col_add(c3, 4); x->tool = 1; snprintf(x->lb, 200, "%s", T("Background")); snprintf(x->u, 1024, "bg"); (void)ci;
+    x = col_add(c3, 4); x->tool = 1; snprintf(x->lb, 200, "%s", T("Brightness")); snprintf(x->vl, 48, "%s%%", SUB_BRIGHT[bright_idx()]); snprintf(x->u, 1024, "bright");
     if (!P.isTrailer && !strncmp(P.curSub, "ext:", 4)) { x = col_add(c4, 4); x->tool = 1; snprintf(x->lb, 200, "%s", T("Auto-sync")); snprintf(x->sub, 120, "%s", SY.st); snprintf(x->u, 1024, "sync"); } /* a downloaded subtitle: lined up with the file's own */
     x = col_add(c4, 4); x->tool = 1; snprintf(x->lb, 200, "%s", T("Adjust")); snprintf(x->sub, 120, "%s", T("While you watch")); snprintf(x->u, 1024, "dlyopen"); /* the small card at the top: the film stays in view */
     x = col_add(c4, 4); x->tool = 1; x->d = 0; snprintf(x->lb, 200, "%s", T("Reset")); snprintf(x->u, 1024, "dly");
@@ -1270,6 +1274,7 @@ static void adjust(const char *k) {
   if (!strcmp(k, "size")) { char v[4]; snprintf(v, sizeof v, "%d", (size_idx() + 1) % 7); store_set("subtitleSize", v); }
   else if (!strcmp(k, "color")) { int ci = color_idx(); store_set("subsColor", SUB_COLORS[((ci < 0 ? 0 : ci) + 1) % 3]); }
   else if (!strcmp(k, "bg")) store_set("subsBgStyle", SUB_BGS[(bg_idx() + 1) % 3]);
+  else if (!strcmp(k, "bright")) store_set("subsBright", SUB_BRIGHT[(bright_idx() + 1) % 8]);
   render_tray(0);
 }
 static void choose(TItem *it) {
@@ -1953,10 +1958,11 @@ static void draw_art(void) {
   gfx_opacity_pop();
 }
 /* the subtitle style, read once while the settings stay as they are */
-typedef struct { unsigned ser; int px; uint32_t col, ol; float bo; } SubStyle;
+typedef struct { unsigned ser; int px; uint32_t col, ol; float bo, br; } SubStyle; /* br: the brightness the colours are dimmed to */
 static const SubStyle *sub_style(void) {
   static SubStyle st; if (st.ser == store_serial() && st.ser) return &st;
-  st.ser = store_serial(); st.px = (int)(38 * SUB_SIZES[size_idx()] / 100.0f + 0.5f); st.col = hexcol(store_get("subsColor", "#ffffff")); st.ol = hexcol(store_get("subsOutlineColor", "#000000")); st.bo = (float)atof(SUB_BGS[bg_idx()]);
+  st.ser = store_serial(); st.px = (int)(38 * SUB_SIZES[size_idx()] / 100.0f + 0.5f); st.br = atoi(SUB_BRIGHT[bright_idx()]) / 100.0f;
+  st.col = col_dim(hexcol(store_get("subsColor", "#ffffff")), st.br); st.ol = col_dim(hexcol(store_get("subsOutlineColor", "#000000")), st.br); st.bo = (float)atof(SUB_BGS[bg_idx()]);
   return &st;
 }
 /* the cue list's index, made once per list: whether it runs in start order, and the latest end so far at each cue */
@@ -1972,7 +1978,7 @@ static const CueIx *cue_ix(void) {
 static void draw_mkv_line(const MkvLine *l, float bx, float by, int px, uint32_t col, uint32_t ol, float bo, int align) {
   float lh = px * 1.35f; char buf[1024]; snprintf(buf, sizeof buf, "%s", l->t); char *lp[12]; int n = 0; for (char *c = strtok(buf, "\n"); c && n < 12; c = strtok(NULL, "\n")) lp[n++] = c;
   int an = l->an ? l->an : 2; float y = an >= 7 ? by : an >= 4 ? by - n * lh / 2 : by - n * lh; /* numpad: 7-9 hang from the point, 1-3 stand on it */
-  if (l->color) col = 0xff000000u | (l->color & 0xffffff); /* a sign keeps its own colour */
+  if (l->color) col = col_dim(0xff000000u | (l->color & 0xffffff), sub_style()->br); /* a sign keeps its own colour (dimmed as the rest) */
   for (int i = 0; i < n; i++) { float tw = text_width(lp[i], px, 600, 0), x0 = align == ALIGN_CENTER ? bx - tw / 2 : align == ALIGN_RIGHT ? bx - tw : bx;
     if (bo > 0) gfx_rrect(x0 - 16, y - 2, tw + 32, lh + 4, 8, BLACK_A((int)(bo * 255)));
     for (int d = 0; d < 8; d++) { static const float ox[8] = { -2, 2, 0, 0, -1, 1, -1, 1 }, oy[8] = { 0, 0, -2, 2, -1, 1, 1, -1 }; text_draw(lp[i], bx + ox[d], y + oy[d] + (lh - text_line_height(px)) / 2, px, 600, ol, 0, 0, align); }
@@ -1980,7 +1986,7 @@ static void draw_mkv_line(const MkvLine *l, float bx, float by, int px, uint32_t
 }
 static void draw_subs(void) {
   float bottom = P.subB.v; /* the page's bottom: 8 %, above the controls (420), the seek bar (200) or an open tray (62 %), gliding 0.3 s */
-  if (asssubs_on()) { asssubs_draw(); return; } /* styled (libass) */
+  if (asssubs_on()) { asssubs_draw(sub_style()->br); return; } /* styled (libass) */
   if (!strncmp(P.curSub, "emb:", 4) && SL.mkv && !SL.tv && mkv) { /* the file's own lines (the TV draws them while it holds the track) */
     MkvLine ls[8]; static char tb[4096]; int n = mkv_lines_at(mkv, atoi(P.curSub + 4), video_time() - P.subDelay, ls, 8, tb, sizeof tb); if (!n) return;
     if (!SL.shown) { SL.shown = 1; fprintf(stderr, "[subs] first line on screen %.1f s after the choice: \"%.40s\"\n", now_() - SL.at, ls[0].t); }
@@ -2319,10 +2325,11 @@ static void draw_tray(void) {
         float tx = 6 + (it->tool ? 18 : 14); if (!it->tool) { if (it->spin) { float cx = tx + 12, cy = yy + h / 2; gfx_ring(cx - 11, cy - 11, 22, 22, 11, 3, WHITE_A(51)); float ph = clock_ph(0.9) * 6.2832f; for (int q = 0; q <= 8; q++) { float an = ph - 2.356f + 1.5708f * q / 8; gfx_circle(cx + cosf(an) * 9.5f, cy + sinf(an) * 9.5f, 1.5f, ACC2); } } /* chosen, its lines still loading: the notes' spinner in place of the tick */
           else if (item_on(it)) icon_draw("check", tx + 1, yy + h / 2 - 11, 22, col_alpha(ACC2, i == TM.onIdx[c] ? TM.chkA[c].v : 1)); tx += 24 + 12; }
         /* a value that cycles: its dots under it, the lit one gliding along; a value just changed fades up */
-        int dk = !it->tool ? 0 : !strcmp(it->u, "size") ? 1 : !strcmp(it->u, "color") ? 2 : !strcmp(it->u, "bg") ? 3 : 0; float va = TM.vkC == c && it->tool && !strcmp(TM.vkU, it->u) ? TM.vkA.v : 1, vy0 = dk ? -5 : 0;
-        float right = 6 + 232 - 18; if (dk >= 2) { swatch_draw(dk - 2, dk == 2 ? (color_idx() < 0 ? 0 : color_idx()) : bg_idx(), right - 13, yy + h / 2, 13); right -= 26 + 10; }
+        int dk = !it->tool ? 0 : !strcmp(it->u, "size") ? 1 : !strcmp(it->u, "color") ? 2 : !strcmp(it->u, "bg") ? 3 : !strcmp(it->u, "bright") ? 4 : 0; float va = TM.vkC == c && it->tool && !strcmp(TM.vkU, it->u) ? TM.vkA.v : 1, vy0 = dk ? -5 : 0;
+        float right = 6 + 232 - 18; if (dk == 2 || dk == 3) { swatch_draw(dk - 2, dk == 2 ? (color_idx() < 0 ? 0 : color_idx()) : bg_idx(), right - 13, yy + h / 2, 13); right -= 26 + 10; }
         if (it->vl[0]) { if (it->vw <= 0) it->vw = text_width(it->vl, 22, 700, 0); float vw = it->vw; text_draw(it->vl, right, yy + h / 2 - text_line_height(22) / 2.0f + vy0 + 6 * (1 - va), 22, 700, col_alpha(ACC3, va), 0, 0, ALIGN_RIGHT);
           if (dk == 1) cycle_dots(dk, 7, size_idx(), right, yy + h / 2 + 14, 9, 2.5f, WHITE_A(64), ACC3, 1);
+          else if (dk == 4) cycle_dots(dk, 8, bright_idx(), right, yy + h / 2 + 14, 9, 2.5f, WHITE_A(64), ACC3, 1);
           right -= vw + 10; } if (it->sw) { gfx_circle(right - 9, yy + h / 2, 9, it->sw); gfx_ring(right - 18, yy + h / 2 - 9, 18, 18, 9, 2, BLACK_A(77)); right -= 18 + 10; }
         int px = it->tool ? 23 : 24;
         if (it->sub[0] && it->tool) { float ly = yy + 12; text_draw(it->lb, tx, ly, px, 700, WHITE_A(255), 0, right - tx - 4, ALIGN_LEFT); text_draw_wrapped(it->sub, tx, ly + px * 1.25f + 2, 6 + 232 - 18 - tx, 2, 21, 600, WHITE_A(184), 0, ALIGN_LEFT, 26); } /* Auto-sync: what it did, on up to two lines */
